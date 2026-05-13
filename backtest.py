@@ -9,6 +9,11 @@
 
 import pandas as pd
 import numpy as np
+try:
+    import yfinance as yf
+    USE_REAL_DATA = True
+except ImportError:
+    USE_REAL_DATA = False
 
 # --- 設定 ---
 PERIOD_YEARS = 5
@@ -227,6 +232,19 @@ NIKKEI225 = [
 ]
 
 
+def fetch_real_data(ticker):
+    raw = yf.download(ticker, period=f"{PERIOD_YEARS}y", auto_adjust=True, progress=False)
+    if raw.empty:
+        return None
+    if isinstance(raw.columns, pd.MultiIndex):
+        raw.columns = raw.columns.get_level_values(0)
+    df = raw[["Close"]].copy()
+    df.columns = ["close"]
+    df.dropna(inplace=True)
+    df["ma"] = df["close"].rolling(MA_DAYS).mean()
+    return df.dropna()
+
+
 def make_sample_data(seed, start_price):
     np.random.seed(seed)
     dates = pd.date_range(end="2025-12-31", periods=PERIOD_YEARS * 252, freq="B")
@@ -269,13 +287,19 @@ def run_backtest(df):
 
 
 # --- 全銘柄バックテスト実行 ---
-print(f"日経225全銘柄バックテスト中（{len(NIKKEI225)}銘柄）...")
+data_mode = "実データ（Yahoo Finance）" if USE_REAL_DATA else "サンプルデータ（疑似乱数）"
+print(f"日経225全銘柄バックテスト中（{len(NIKKEI225)}銘柄）... [{data_mode}]")
 print(f"条件：25日移動平均線ルール、損切り{STOP_LOSS_PCT*100:.0f}%、期間{PERIOD_YEARS}年\n")
 
 all_results = []
 
 for seed, (ticker, name, start_price) in enumerate(NIKKEI225):
-    df = make_sample_data(seed, start_price)
+    if USE_REAL_DATA:
+        df = fetch_real_data(ticker)
+        if df is None:
+            continue
+    else:
+        df = make_sample_data(seed, start_price)
     result = run_backtest(df)
 
     if result.empty or len(result) < 5:
