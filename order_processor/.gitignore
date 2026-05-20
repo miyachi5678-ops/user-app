@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+data/master.db
+output/
