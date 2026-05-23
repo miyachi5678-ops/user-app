@@ -1,4 +1,9 @@
 # 設定ファイル - ここを環境に合わせて変更してください
+import os
+
+# このファイル（config.py）のある場所を基準にパスを解決する
+# → どのフォルダから実行しても同じDBと出力先を使う
+_HERE = os.path.dirname(os.path.abspath(__file__))
 
 # メール設定
 EMAIL_CONFIG = {
@@ -14,5 +19,5 @@ EMAIL_CONFIG = {
 
 # ファイルパス設定
 MASTER_EXCEL_PATH = r"C:\Users\YourName\Documents\構成一覧.xlsx"   # 構成一覧Excelのパス
-DB_PATH = "order_processor/data/master.db"                          # SQLiteデータベースのパス
-OUTPUT_DIR = "order_processor/output"                               # 出力ファイルの保存先
+DB_PATH     = os.path.join(_HERE, "data", "master.db")              # SQLiteデータベースのパス
+OUTPUT_DIR  = os.path.join(_HERE, "output")                         # 出力ファイルの保存先
