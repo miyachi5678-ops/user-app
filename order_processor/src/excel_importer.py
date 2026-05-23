@@ -4,10 +4,27 @@ import openpyxl
 from .db import get_connection
 
 
-def import_from_excel(excel_path: str, db_path: str, replace: bool = True) -> dict:
-    """構成一覧ExcelをSQLiteにインポートする。
-    replace=True の場合は既存データを全て置き換える。
-    戻り値: {"単品": 件数, "ASSY": 件数}
+# ── 形状表記の正規化テーブル ────────────────────────────────────────
+# ジュケンのExcelで表記ゆれが発生しやすい文字を統一する
+_SHAPE_NORMALIZE = [
+    ("U", "∩"),    # 半角Uをアーチ記号に統一
+]
+
+
+def _normalize_shape(shape: str | None) -> str | None:
+    """形状文字列の表記ゆれを正規化する"""
+    if shape is None:
+        return None
+    for before, after in _SHAPE_NORMALIZE:
+        shape = shape.replace(before, after)
+    return shape if shape.strip() else None
+
+
+def parse_excel_to_rows(excel_path: str) -> list[dict]:
+    """
+    構成一覧ExcelをパースしてBOM行のリストを返す（DBへの書き込みは行わない）。
+
+    差分確認などで事前にデータを取得したいときに使う。
     """
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     if "構成一覧" not in wb.sheetnames:
@@ -16,20 +33,29 @@ def import_from_excel(excel_path: str, db_path: str, replace: bool = True) -> di
     ws = wb["構成一覧"]
     tanpin_rows = []
     assy_rows = []
-    mode = "tanpin"  # "tanpin" → "assy" に切り替わる
+    mode = "tanpin"
 
     for row in ws.iter_rows(min_row=6, values_only=True):
-        # ASSYセクションのヘッダー行を検出（B列='品番', C列='員数'）
         if row[1] == "品番" and row[2] == "員数":
             mode = "assy"
             continue
-
         if mode == "tanpin":
             _parse_tanpin_row(row, tanpin_rows)
         else:
             _parse_assy_row(row, assy_rows)
 
-    all_rows = tanpin_rows + assy_rows
+    return tanpin_rows + assy_rows
+
+
+def import_from_excel(excel_path: str, db_path: str, replace: bool = True) -> dict:
+    """構成一覧ExcelをSQLiteにインポートする。
+    replace=True の場合は既存データを全て置き換える。
+    戻り値: {"単品": 件数, "ASSY": 件数}
+    """
+    all_rows = parse_excel_to_rows(excel_path)
+    tanpin_count = sum(1 for r in all_rows if r["親品番"] == r["子品番"])
+    assy_count   = len(all_rows) - tanpin_count
+
     conn = get_connection(db_path)
     if replace:
         conn.execute("DELETE FROM bom")
@@ -40,7 +66,7 @@ def import_from_excel(excel_path: str, db_path: str, replace: bool = True) -> di
     """, all_rows)
     conn.commit()
     conn.close()
-    return {"単品": len(tanpin_rows), "ASSY": len(assy_rows)}
+    return {"単品": tanpin_count, "ASSY": assy_count}
 
 
 def _parse_tanpin_row(row, out: list):
@@ -63,7 +89,7 @@ def _parse_tanpin_row(row, out: list):
         "長さ表示":   nagasa_raw,
         "長さ記号":   kigo,
         "材料名称":   _build_material_name(nagasa_raw, kigo),
-        "形状":       _str(row[8]),
+        "形状":       _normalize_shape(_str(row[8])),
         "R側":        None,
         "L側":        None,
         "形状ラベル": _str(row[7]),
@@ -88,7 +114,7 @@ def _parse_assy_row(row, out: list):
         "長さ表示":   nagasa_raw,
         "長さ記号":   kigo,
         "材料名称":   _build_material_name(nagasa_raw, kigo),
-        "形状":       _str(row[8]),
+        "形状":       _normalize_shape(_str(row[8])),
         "R側":        None,
         "L側":        None,
         "形状ラベル": _str(row[7]),

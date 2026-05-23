@@ -134,14 +134,53 @@ def cmd_setup_access(accdb_path: str):
     print(f"完了: {count}件のBOMデータをインポートしました")
 
 
-def cmd_update_master(excel_path: str):
-    """構成一覧ExcelからBOMを更新する"""
-    from src.excel_importer import import_from_excel
+def cmd_update_master(excel_path: str, force: bool = False):
+    """
+    構成一覧ExcelをもとにBOMマスタを更新する。
 
-    print(f"構成一覧Excelを読み込み中: {excel_path}")
+    通常は差分を確認しながら更新します。
+    --force オプションをつけると確認なしで全件置き換えます（初回セットアップ時向け）。
+    """
+    from src.excel_importer import parse_excel_to_rows, import_from_excel
+    from src.bom_updater import compute_diff, apply_diff_interactively
+
     initialize_db(DB_PATH)
-    count = import_from_excel(excel_path, DB_PATH, replace=True)
-    print(f"完了: {count}件のBOMデータを更新しました")
+    print(f"構成一覧Excelを読み込み中: {excel_path}")
+    new_rows = parse_excel_to_rows(excel_path)
+    print(f"  → {len(new_rows)} 行を読み込みました")
+
+    if force:
+        # 確認なしで全件置き換え（初回セットアップ時など）
+        from src.db import get_connection
+        conn = get_connection(DB_PATH)
+        conn.execute("DELETE FROM bom")
+        conn.executemany("""
+            INSERT INTO bom (親品番, 子品番, 員数, 長さ, 長さ表示, 長さ記号, 材料名称, 形状, R側, L側, 形状ラベル, 備考)
+            VALUES (:親品番, :子品番, :員数, :長さ, :長さ表示, :長さ記号, :材料名称, :形状, :R側, :L側, :形状ラベル, :備考)
+        """, new_rows)
+        conn.commit()
+        conn.close()
+        print(f"完了: {len(new_rows)} 件のBOMデータを全件置き換えました（--force）")
+        return
+
+    # DBが空なら差分なし → そのままインポート
+    from src.db import get_connection
+    count = get_connection(DB_PATH).execute("SELECT COUNT(*) FROM bom").fetchone()[0]
+    if count == 0:
+        print("  DBにデータがありません。全件インポートします。")
+        from src.bom_updater import _insert_rows
+        conn = get_connection(DB_PATH)
+        _insert_rows(conn, new_rows)
+        conn.commit()
+        conn.close()
+        print(f"完了: {len(new_rows)} 件をインポートしました")
+        return
+
+    # 差分確認フロー
+    print(f"  現在のDB: {count} 行")
+    print("  差分を確認します...\n")
+    diff = compute_diff(new_rows, DB_PATH)
+    apply_diff_interactively(diff, DB_PATH)
 
 
 def cmd_process(input_path: str, send_email: bool = False):
@@ -213,7 +252,8 @@ def cmd_process(input_path: str, send_email: bool = False):
 def main():
     parser = argparse.ArgumentParser(description="注文解析システム")
     parser.add_argument("--setup-access", metavar="ACCDB", help="AccessDBからBOMをインポート")
-    parser.add_argument("--update-master", metavar="EXCEL", help="構成一覧ExcelからBOMを更新")
+    parser.add_argument("--update-master", metavar="EXCEL", help="構成一覧ExcelからBOMを更新（差分確認あり）")
+    parser.add_argument("--force",         action="store_true", help="--update-master と組み合わせ: 確認なしで全件置き換え")
     parser.add_argument("--input",         metavar="EXCEL", help="注文Excelを処理してレポート生成")
     parser.add_argument("--send-email",    action="store_true", help="レポートをメール送信する")
     args = parser.parse_args()
@@ -221,7 +261,7 @@ def main():
     if args.setup_access:
         cmd_setup_access(args.setup_access)
     elif args.update_master:
-        cmd_update_master(args.update_master)
+        cmd_update_master(args.update_master, force=args.force)
     elif args.input:
         cmd_process(args.input, send_email=args.send_email)
     else:
