@@ -30,10 +30,19 @@ def parse_order_excel(excel_path: str) -> list[Order]:
     ws = wb[sheet_name]
     orders = []
 
-    # 行2がヘッダー、行3からデータ
-    for row in ws.iter_rows(min_row=3, values_only=True):
-        # B列=納期, C列=最新納期, D列=品番, E列=オーダーNo, F列=発注数, H列=工場, I列=発注日
-        _, noki, saishinnoki, hinban, order_no, hatchusuu, _, kojyo, hatchubi, *_ = (
+    # ヘッダー行を動的に検出して次の行からデータ読み込み
+    # A列=納期, B列=最新納期, C列=品番, D列=オーダーNo, E列=発注数, F列=納期回答, G列=工場, H列=発注日
+    data_start_row = None
+    for i, row in enumerate(ws.iter_rows(min_row=1, max_row=10, values_only=True), 1):
+        if row[3] and "オーダー" in str(row[3]):
+            data_start_row = i + 1
+            break
+    if data_start_row is None:
+        data_start_row = 4  # フォールバック
+
+    for row in ws.iter_rows(min_row=data_start_row, values_only=True):
+        # A列=納期, B列=最新納期, C列=品番, D列=オーダーNo, E列=発注数, F列=納期回答, G列=工場, H列=発注日
+        noki, saishinnoki, hinban, order_no, hatchusuu, _, kojyo, hatchubi, *_ = (
             list(row) + [None] * 15
         )[:15]
 
@@ -42,15 +51,23 @@ def parse_order_excel(excel_path: str) -> list[Order]:
         if str(order_no).strip() in ("計画", ""):
             continue
 
+        # 発注数が数値でない行（ヘッダーの混入など）はスキップ
+        try:
+            hatchu_float = float(hatchusuu) if hatchusuu else 1.0
+        except (ValueError, TypeError):
+            continue
+
         orders.append(Order(
             オーダーNo=str(order_no).strip(),
             品番=str(hinban).strip(),
-            発注数=float(hatchusuu) if hatchusuu else 1.0,
+            発注数=hatchu_float,
             納期=_format_date(noki),
             最新納期=_format_date(saishinnoki),
             工場=str(kojyo).strip() if kojyo else None,
             発注日=_format_date(hatchubi),
         ))
+
+
 
     return orders
 
