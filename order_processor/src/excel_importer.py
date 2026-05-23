@@ -50,6 +50,9 @@ def _parse_tanpin_row(row, out: list):
     if not hinban:
         return
     hinban = str(hinban).strip()
+    # 「鏡面品番」など漢字・ひらがな・カタカナを含むラベル行を除外
+    if not _is_valid_hinban(hinban):
+        return
     nagasa_raw = _str(row[4])
     kigo       = _str(row[5])
     out.append({
@@ -122,6 +125,21 @@ def _build_material_name(nagasa_raw: str | None, kigo: str | None) -> str | None
     if kigo:
         return f"{nagasa_raw}{kigo}"
     return nagasa_raw
+
+
+def _is_valid_hinban(hinban: str) -> bool:
+    """品番として有効かどうか判定する。
+    漢字・ひらがな・カタカナを含む場合はラベル行と判定して除外。
+    例: '鏡面品番' → False / '0F035600741' → True
+    """
+    for ch in hinban:
+        cp = ord(ch)
+        # CJK統合漢字・ひらがな・カタカナ範囲
+        if (0x3040 <= cp <= 0x309F or   # ひらがな
+            0x30A0 <= cp <= 0x30FF or   # カタカナ
+            0x4E00 <= cp <= 0x9FFF):    # 漢字
+            return False
+    return True
 
 
 def _to_float(value) -> float | None:
