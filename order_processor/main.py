@@ -249,23 +249,153 @@ def cmd_process(input_path: str, send_email: bool = False):
     return output_path
 
 
-def main():
-    parser = argparse.ArgumentParser(description="注文解析システム")
-    parser.add_argument("--setup-access", metavar="ACCDB", help="AccessDBからBOMをインポート")
-    parser.add_argument("--update-master", metavar="EXCEL", help="構成一覧ExcelからBOMを更新（差分確認あり）")
-    parser.add_argument("--force",         action="store_true", help="--update-master と組み合わせ: 確認なしで全件置き換え")
-    parser.add_argument("--input",         metavar="EXCEL", help="注文Excelを処理してレポート生成")
-    parser.add_argument("--send-email",    action="store_true", help="レポートをメール送信する")
-    args = parser.parse_args()
+# ══════════════════════════════════════════════════════════════
+#  UI 層 ― テキストメニュー版
+#
+#  将来 GUI に切り替える場合はこのブロックだけ差し替えればOK。
+#  cmd_process() / cmd_update_master() などの処理層は変えない。
+# ══════════════════════════════════════════════════════════════
 
-    if args.setup_access:
-        cmd_setup_access(args.setup_access)
-    elif args.update_master:
-        cmd_update_master(args.update_master, force=args.force)
-    elif args.input:
-        cmd_process(args.input, send_email=args.send_email)
+_VERSION = "1.0"
+_LINE    = "═" * 52
+
+
+def _ask_file(prompt: str) -> str | None:
+    """
+    ファイルパスの入力を求める。
+    ・Windowsのドラッグ&ドロップで付く引用符を自動で除去
+    ・空欄またはキャンセル（q）でメニューに戻る
+    """
+    print(f"\n  {prompt}")
+    print("  （ファイルをこのウィンドウにドラッグ＆ドロップしてもOK）")
+    print("  （キャンセルする場合は q を入力）")
+    print()
+    try:
+        raw = input("  > ").strip()
+    except EOFError:
+        return None
+
+    if raw.lower() in ("q", "quit", "exit", ""):
+        return None
+
+    # Windows ドラッグ＆ドロップで付く引用符を除去
+    path = raw.strip('"').strip("'")
+    if not os.path.isfile(path):
+        print(f"\n  ⚠ ファイルが見つかりません: {path}")
+        print("  パスを確認してもう一度試してください。")
+        return None
+    return path
+
+
+def _menu_process_order():
+    """メニュー操作: 注文書を処理する"""
+    path = _ask_file("注文書 Excel のパスを入力してください")
+    if path is None:
+        return
+    print()
+    try:
+        cmd_process(path)
+    except Exception as e:
+        print(f"\n  ⚠ エラーが発生しました: {e}")
+    _pause()
+
+
+def _menu_update_master():
+    """メニュー操作: 構成一覧を更新する"""
+    path = _ask_file("構成一覧 Excel のパスを入力してください")
+    if path is None:
+        return
+    print()
+    try:
+        cmd_update_master(path)
+    except Exception as e:
+        print(f"\n  ⚠ エラーが発生しました: {e}")
+    _pause()
+
+
+def _pause():
+    """処理完了後に一時停止する"""
+    print()
+    try:
+        input("  ── Enterキーを押すとメニューに戻ります ──")
+    except EOFError:
+        pass
+
+
+def main_menu():
+    """
+    テキストメニュー版のメイン画面。
+
+    GUI に切り替える場合はこの関数を差し替えることを想定している。
+    処理の実体（cmd_process 等）はそのまま再利用できる。
+    """
+    initialize_db(DB_PATH)
+
+    while True:
+        # 画面クリア（Windows: cls / Mac・Linux: clear）
+        os.system("cls" if os.name == "nt" else "clear")
+
+        print(_LINE)
+        print(f"  注文処理システム  ver.{_VERSION}")
+        print(_LINE)
+        print()
+        print("  [1]  注文書を処理する")
+        print("         → レポート・材料仕分けリストを生成します")
+        print()
+        print("  [2]  構成一覧を更新する")
+        print("         → ジュケンから届いたExcelと差分確認しながら更新します")
+        print()
+        print("  [3]  終了")
+        print()
+        print(_LINE)
+
+        try:
+            choice = input("  選択してください [1-3]: ").strip()
+        except EOFError:
+            break
+
+        if choice == "1":
+            _menu_process_order()
+        elif choice == "2":
+            _menu_update_master()
+        elif choice == "3":
+            print("\n  終了します。\n")
+            break
+        else:
+            print("\n  1 ～ 3 の数字を入力してください。")
+            _pause()
+
+
+# ══════════════════════════════════════════════════════════════
+#  エントリーポイント
+# ══════════════════════════════════════════════════════════════
+
+def main():
+    """
+    引数なしで起動 → メニュー画面を表示。
+    引数あり（--input など）→ 従来のコマンドライン動作。
+    """
+    # 引数が渡されている場合はコマンドライン動作（バッチ処理などに使う）
+    if len(sys.argv) > 1:
+        parser = argparse.ArgumentParser(description="注文解析システム")
+        parser.add_argument("--setup-access", metavar="ACCDB", help="AccessDBからBOMをインポート")
+        parser.add_argument("--update-master", metavar="EXCEL", help="構成一覧ExcelからBOMを更新（差分確認あり）")
+        parser.add_argument("--force",         action="store_true", help="--update-master と組み合わせ: 確認なしで全件置き換え")
+        parser.add_argument("--input",         metavar="EXCEL", help="注文Excelを処理してレポート生成")
+        parser.add_argument("--send-email",    action="store_true", help="レポートをメール送信する")
+        args = parser.parse_args()
+
+        if args.setup_access:
+            cmd_setup_access(args.setup_access)
+        elif args.update_master:
+            cmd_update_master(args.update_master, force=args.force)
+        elif args.input:
+            cmd_process(args.input, send_email=args.send_email)
+        else:
+            parser.print_help()
     else:
-        parser.print_help()
+        # 引数なし → メニュー画面
+        main_menu()
 
 
 if __name__ == "__main__":
