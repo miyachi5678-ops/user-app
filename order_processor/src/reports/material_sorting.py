@@ -73,13 +73,23 @@ def build_sorting_data(orders: list[Order], db_path: str) -> dict[str, dict[str,
 
 
 def _classify_group(形状: str, parent_has_tome: bool) -> str:
-    """形状文字列とトメ有無からグループを判定する"""
+    """形状文字列とトメ有無からグループを判定する。
+
+    「直」系と判定するルール:
+      - 形状から「鏡面」「図XXXX（図面参照番号）」「外蓋/内蓋」を正規化・除去し
+      - 残った文字列が「直」と「蓋」だけで構成される場合 → 直 or 直鏡面
+      - 例: '直', '蓋直', '直蓋', '蓋直蓋', '蓋直図2401.5', '直蓋　鏡面' など
+    """
     has_鏡面 = "鏡面" in 形状
 
-    # 「鏡面」と空白を除いた純粋な形状を取り出す
-    shape_core = 形状.replace("鏡面", "").replace("　", "").replace(" ", "").strip()
+    # 「鏡面」「図XXXX / 図はXXXX（図面参照番号）」「外蓋/内蓋」を除去し空白も除去
+    shape_clean = 形状.replace("鏡面", "")
+    shape_clean = re.sub(r'図は?[\d.]+', '', shape_clean)   # 図2401.5 / 図は390.7
+    shape_clean = shape_clean.replace("外蓋", "蓋").replace("内蓋", "蓋")
+    shape_clean = shape_clean.replace("　", "").replace(" ", "").strip()
 
-    if shape_core == "直":
+    # 「直」と「蓋」だけで構成され、かつ「直」を1つ以上含む → 直系（ストレートカット）
+    if re.fullmatch(r'[直蓋]*直[直蓋]*', shape_clean):
         return GROUP_CHOKU_KAGAMI if has_鏡面 else GROUP_CHOKU
     elif parent_has_tome:
         return GROUP_AICHI
