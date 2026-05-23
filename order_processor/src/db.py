@@ -19,8 +19,10 @@ def initialize_db(db_path: str):
             親品番      TEXT NOT NULL,
             子品番      TEXT,
             員数        REAL DEFAULT 1,
-            長さ        REAL,
-            長さ記号    TEXT,
+            長さ        REAL,       -- 数値（計算用）例: 525.0
+            長さ表示    TEXT,       -- 表示用プレフィックス付き 例: ①525
+            長さ記号    TEXT,       -- F列の記号 例: -1, -2, L, R
+            材料名称    TEXT,       -- 発注時の材料名 例: ①525-1
             形状        TEXT,
             R側         TEXT,
             L側         TEXT,
