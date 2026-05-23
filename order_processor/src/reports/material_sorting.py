@@ -11,6 +11,25 @@ from ..db import get_connection
 from ..order_parser import Order
 
 
+def load_skip_list(path: str) -> set[str]:
+    """
+    BOM未登録スキップリストファイルを読み込む。
+
+    ファイルが存在しない場合は空セットを返す。
+    各行の # 以降はコメントとして無視する。
+    """
+    skip: set[str] = set()
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                code = line.split("#")[0].strip()
+                if code:
+                    skip.add(code)
+    except FileNotFoundError:
+        pass
+    return skip
+
+
 # ── グループ定義 ──────────────────────────────────────────────
 GROUP_HONDA       = "ホンダ"
 GROUP_AICHI       = "相地"
@@ -28,20 +47,43 @@ COL_WIDTHS = {
 }
 
 
-def build_sorting_data(orders: list[Order], db_path: str) -> dict[str, dict[str, float]]:
+def build_sorting_data(
+    orders: list[Order],
+    db_path: str,
+    skip_set: set[str] | None = None,
+) -> tuple[dict[str, dict[str, float]], list[tuple[str, float]]]:
     """
     注文リストをBOM展開し、材料仕分けデータを集計する。
 
+    Args:
+        orders:   注文リスト
+        db_path:  SQLiteデータベースパス
+        skip_set: BOM未登録でも警告を出さない品番セット（bom_skip_list.txt の内容）
+
     Returns:
-        {
-            "ホンダ":  {"材料名称": 合計数量, ...},
-            "相地":    {"材料名称": 合計数量, ...},
-            "直":      {"材料名称": 合計数量, ...},
-            "直 鏡面": {"材料名称": 合計数量, ...},
-        }
+        tuple[集計データ, 未ヒット品番リスト]
+
+        集計データ:
+            {
+                "ホンダ":  {"材料名称": 合計数量, ...},
+                "相地":    {"材料名称": 合計数量, ...},
+                "直":      {"材料名称": 合計数量, ...},
+                "直 鏡面": {"材料名称": 合計数量, ...},
+            }
+
+        未ヒット品番リスト:
+            BOMが見つからず、かつ skip_set にも含まれていない品番と発注数のリスト
+            例: [("0D264400130", 1.0), ("0A124717340", 2.0)]
+            → 目視確認のうえ、問題なければ bom_skip_list.txt に追記してください
     """
+    if skip_set is None:
+        skip_set = set()
+
     conn = get_connection(db_path)
     result: dict[str, dict[str, float]] = {g: {} for g in GROUP_ORDER}
+    # 未ヒット: (品番, 発注数) ― 品番の重複は除く
+    unmatched_seen: set[str] = set()
+    unmatched: list[tuple[str, float]] = []
 
     for order in orders:
         bom_rows = conn.execute(
@@ -50,6 +92,9 @@ def build_sorting_data(orders: list[Order], db_path: str) -> dict[str, dict[str,
         ).fetchall()
 
         if not bom_rows:
+            if order.品番 not in skip_set and order.品番 not in unmatched_seen:
+                unmatched.append((order.品番, order.発注数))
+                unmatched_seen.add(order.品番)
             continue
 
         # この親品番のどこかにトメがあるか確認
@@ -69,7 +114,7 @@ def build_sorting_data(orders: list[Order], db_path: str) -> dict[str, dict[str,
             result[group][材料名称] = result[group].get(材料名称, 0.0) + 数量
 
     conn.close()
-    return result
+    return result, unmatched
 
 
 def _classify_group(形状: str, parent_has_tome: bool) -> str:
@@ -111,14 +156,23 @@ def write_material_sorting_list(
     db_path: str,
     output_path: str,
     month_label: str,
-) -> dict[str, int]:
+    skip_set: set[str] | None = None,
+) -> tuple[dict[str, int], list[tuple[str, float]]]:
     """
     材料仕分けリストExcelを出力する。
 
+    Args:
+        orders:      注文リスト
+        db_path:     SQLiteデータベースパス
+        output_path: 出力Excelファイルパス
+        month_label: シート名（例: "2026年05月"）
+        skip_set:    BOM未登録でも警告を出さない品番セット
+
     Returns:
-        {"ホンダ": 件数, "相地": 件数, "直": 件数, "直 鏡面": 件数}
+        tuple[グループ別件数, 未ヒット品番リスト]
+        未ヒット品番リスト: [(品番, 発注数), ...] ― 目視確認が必要なもの
     """
-    data = build_sorting_data(orders, db_path)
+    data, unmatched = build_sorting_data(orders, db_path, skip_set)
 
     # 各グループを数値順ソート
     sorted_groups: dict[str, list[tuple[str, float]]] = {}
@@ -135,9 +189,13 @@ def write_material_sorting_list(
     _write_sheet(ws, sorted_groups)
     _set_column_widths(ws)
 
+    # 未ヒット品番があれば別シートに記録
+    if unmatched:
+        _write_unmatched_sheet(wb, unmatched)
+
     wb.save(output_path)
 
-    return {g: len(sorted_groups[g]) for g in GROUP_ORDER}
+    return {g: len(sorted_groups[g]) for g in GROUP_ORDER}, unmatched
 
 
 def _write_sheet(ws, sorted_groups: dict[str, list[tuple[str, float]]]):
@@ -192,6 +250,48 @@ def _write_sheet(ws, sorted_groups: dict[str, list[tuple[str, float]]]):
 
             for cell in [cell_担当, cell_記号, cell_数量]:
                 cell.border = border
+
+
+def _write_unmatched_sheet(wb: openpyxl.Workbook, unmatched: list[tuple[str, float]]):
+    """「要確認」シートを追加し、BOM未ヒット品番を一覧する"""
+    ws = wb.create_sheet("⚠要確認")
+
+    thin = Side(style="thin")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    bold = Font(bold=True)
+    red = Font(bold=True, color="CC0000")
+    warn_fill = PatternFill("solid", fgColor="FFF2CC")   # 薄黄
+
+    # タイトル
+    ws["A1"] = "【要確認】BOM未登録品番"
+    ws["A1"].font = red
+    ws["A2"] = (
+        "以下の品番は注文書にありますが、構成表（BOM）にも除外リストにも見つかりませんでした。"
+    )
+    ws["A2"].font = Font(color="CC0000")
+    ws["A3"] = (
+        "ジュケン等に確認し、処理不要と判断した場合は bom_skip_list.txt に追記してください。"
+    )
+    ws["A3"].font = Font(italic=True, color="666666")
+
+    # ヘッダー
+    for col, label in [(1, "品番"), (2, "発注数")]:
+        cell = ws.cell(row=5, column=col, value=label)
+        cell.font = bold
+        cell.fill = warn_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center")
+
+    # データ行
+    for i, (hinban, qty) in enumerate(unmatched):
+        r = 6 + i
+        for col, val in [(1, hinban), (2, int(qty) if qty == int(qty) else qty)]:
+            cell = ws.cell(row=r, column=col, value=val)
+            cell.fill = warn_fill
+            cell.border = border
+
+    ws.column_dimensions["A"].width = 20
+    ws.column_dimensions["B"].width = 10
 
 
 def _set_column_widths(ws):

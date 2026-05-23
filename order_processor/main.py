@@ -52,6 +52,8 @@ def cmd_update_master(excel_path: str):
 
 def cmd_process(input_path: str, send_email: bool = False):
     """注文Excelを解析してレポートを生成する"""
+    from src.reports.material_sorting import write_material_sorting_list, load_skip_list
+
     initialize_db(DB_PATH)
 
     # 注文を読み込む
@@ -59,21 +61,52 @@ def cmd_process(input_path: str, send_email: bool = False):
     orders = parse_order_excel(input_path)
     print(f"  → {len(orders)}件の注文を読み込みました")
 
-    # BOM展開
+    # BOM展開（メインレポート用）
     print("BOM展開中...")
     details, unknown = process_orders(orders, DB_PATH)
     print(f"  → {len(details)}件の明細を生成しました")
     if unknown:
         print(f"  ⚠ 構成未登録品番: {', '.join(unknown)}")
 
-    # Excel出力
+    # 出力ディレクトリ確認
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = os.path.basename(input_path).replace(".xlsx", "")
-    output_path = os.path.join(OUTPUT_DIR, f"解析結果_{filename}_{timestamp}.xlsx")
 
+    # メインレポート出力
+    output_path = os.path.join(OUTPUT_DIR, f"解析結果_{filename}_{timestamp}.xlsx")
     write_report(orders, details, unknown, output_path)
     print(f"レポートを保存しました: {output_path}")
+
+    # ── 材料仕分けリスト出力 ──────────────────────────────────
+    skip_list_path = os.path.join(os.path.dirname(__file__), "bom_skip_list.txt")
+    skip_set = load_skip_list(skip_list_path)
+
+    month_label = datetime.now().strftime("%Y年%m月")
+    sorting_path = os.path.join(OUTPUT_DIR, f"材料仕分けリスト_{filename}_{timestamp}.xlsx")
+
+    counts, sort_unmatched = write_material_sorting_list(
+        orders, DB_PATH, sorting_path, month_label, skip_set
+    )
+    print(f"材料仕分けリストを保存しました: {sorting_path}")
+    print(
+        f"  ホンダ:{counts['ホンダ']} 相地:{counts['相地']}"
+        f" 直:{counts['直']} 直鏡面:{counts['直 鏡面']}"
+    )
+
+    # 未ヒット品番の警告（コンソール）
+    if sort_unmatched:
+        print()
+        print("━" * 62)
+        print("⚠  【要確認】材料仕分けリスト ― BOM未登録品番")
+        print("   以下の品番は構成表（BOM）にも除外リストにも見つかりませんでした。")
+        print("   ジュケン等に確認し、問題なければ bom_skip_list.txt に追記してください。")
+        print("   詳細は材料仕分けリストExcelの「⚠要確認」シートも参照してください。")
+        print()
+        for hinban, qty in sort_unmatched:
+            print(f"   ・{hinban}  （発注数: {qty:g}）")
+        print("━" * 62)
+        print()
 
     # メール送信
     if send_email:
