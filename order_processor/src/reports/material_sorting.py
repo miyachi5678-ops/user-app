@@ -30,6 +30,33 @@ def load_skip_list(path: str) -> set[str]:
     return skip
 
 
+def find_unknowns(
+    orders: list[Order],
+    db_path: str,
+    skip_set: set[str],
+) -> list[tuple[str, float]]:
+    """
+    スキップリストに載っていない BOM未登録品番を返す。
+
+    Returns:
+        [(品番, 発注数), ...]  ― 重複なし、注文書の出現順
+    """
+    conn = get_connection(db_path)
+    seen: set[str] = set()
+    result: list[tuple[str, float]] = []
+    for order in orders:
+        if order.品番 in skip_set or order.品番 in seen:
+            continue
+        count = conn.execute(
+            "SELECT COUNT(*) FROM bom WHERE 親品番 = ?", (order.品番,)
+        ).fetchone()[0]
+        if count == 0:
+            result.append((order.品番, order.発注数))
+            seen.add(order.品番)
+    conn.close()
+    return result
+
+
 # ── グループ定義 ──────────────────────────────────────────────
 GROUP_HONDA       = "ホンダ"
 GROUP_AICHI       = "相地"
