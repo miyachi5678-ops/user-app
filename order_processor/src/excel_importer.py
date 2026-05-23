@@ -117,14 +117,19 @@ def _parse_nagasa_value(raw: str | None) -> float | None:
 def _build_material_name(nagasa_raw: str | None, kigo: str | None) -> str | None:
     """材料名称を組み立てる。
     例: nagasa_raw='①525', kigo='-1' → '①525-1'
+        nagasa_raw='830',   kigo='0'  → '830-0'  （数字のみ記号はハイフン付加）
+        nagasa_raw='1670',  kigo='L'  → '1670L'  （L/R/RAMはハイフンなし）
         nagasa_raw='2615',  kigo=None → '2615'
-        nagasa_raw='155',   kigo='-1' → '155-1'
     """
     if nagasa_raw is None:
         return None
-    if kigo:
-        return f"{nagasa_raw}{kigo}"
-    return nagasa_raw
+    if not kigo:
+        return nagasa_raw
+    # 記号が純粋な数字（'0', '1' など）の場合はハイフンを付加
+    # '-1', '-2' などすでにハイフンを含む場合や L/R/RAM はそのまま結合
+    if kigo.isdigit():
+        return f"{nagasa_raw}-{kigo}"
+    return f"{nagasa_raw}{kigo}"
 
 
 def _is_valid_hinban(hinban: str) -> bool:
