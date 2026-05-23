@@ -51,6 +51,12 @@ def parse_order_excel(excel_path: str) -> list[Order]:
         if str(order_no).strip() in ("計画", ""):
             continue
 
+        # コーナーモール（業務対象外）を除外
+        # 品番が 0A224 または 0R224 で始まるものはジュケン側で対応するため除外
+        hinban_str = str(hinban).strip()
+        if hinban_str.startswith(("0A224", "0R224")):
+            continue
+
         # 発注数が数値でない行（ヘッダーの混入など）はスキップ
         try:
             hatchu_float = float(hatchusuu) if hatchusuu else 1.0
