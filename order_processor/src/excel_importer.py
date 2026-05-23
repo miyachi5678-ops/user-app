@@ -58,7 +58,7 @@ def _parse_tanpin_row(row, out: list):
     out.append({
         "親品番":     hinban,
         "子品番":     hinban,   # 単品は自己参照
-        "員数":       _to_float(row[6]) or 1,
+        "員数":       1,
         "長さ":       _parse_nagasa_value(nagasa_raw),
         "長さ表示":   nagasa_raw,
         "長さ記号":   kigo,
