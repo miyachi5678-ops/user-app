@@ -66,6 +66,7 @@ def _resolve_unknowns_interactively(
     unknowns: list[tuple[str, float]],
     db_path: str,
     skip_list_path: str,
+    ask_func=None,
 ) -> None:
     """
     BOM未登録品番を1件ずつ表示し、スキップリスト追加かBOM登録かを選択させる。
@@ -96,15 +97,22 @@ def _resolve_unknowns_interactively(
         print("  [2] BOM登録が必要（構成一覧Excelに追加してください）")
         print()
 
-        while True:
-            try:
-                choice = input("  選択 [1/2]: ").strip()
-            except EOFError:
-                # 非対話環境（パイプ等）では選択できないのでスキップ
-                choice = ""
-            if choice in ("1", "2"):
-                break
-            print("  1 か 2 を入力してください。")
+        if ask_func is not None:
+            choice = ask_func(
+                "スキップリストに追加（対象外品番として以降はスルー）",
+                "BOM登録が必要（構成一覧Excelに追加してください）",
+                f"品番: {hinban}  （発注数: {qty:g}）"
+                + (f"\n\n類似品番: {similar[0]['品番']}" if similar else ""),
+            )
+        else:
+            while True:
+                try:
+                    choice = input("  選択 [1/2]: ").strip()
+                except EOFError:
+                    choice = ""
+                if choice in ("1", "2"):
+                    break
+                print("  1 か 2 を入力してください。")
 
         if choice == "1":
             with open(skip_list_path, "a", encoding="utf-8") as f:
@@ -134,7 +142,7 @@ def cmd_setup_access(accdb_path: str):
     print(f"完了: {count}件のBOMデータをインポートしました")
 
 
-def cmd_update_master(excel_path: str, force: bool = False):
+def cmd_update_master(excel_path: str, force: bool = False, ask_func=None):
     """
     構成一覧ExcelをもとにBOMマスタを更新する。
 
@@ -180,10 +188,10 @@ def cmd_update_master(excel_path: str, force: bool = False):
     print(f"  現在のDB: {count} 行")
     print("  差分を確認します...\n")
     diff = compute_diff(new_rows, DB_PATH)
-    apply_diff_interactively(diff, DB_PATH)
+    apply_diff_interactively(diff, DB_PATH, ask_func=ask_func)
 
 
-def cmd_process(input_path: str, send_email: bool = False):
+def cmd_process(input_path: str, send_email: bool = False, ask_func=None):
     """注文Excelを解析してレポートを生成する"""
     from src.reports.material_sorting import (
         write_material_sorting_list,
@@ -204,7 +212,7 @@ def cmd_process(input_path: str, send_email: bool = False):
 
     unknowns = find_unknowns(orders, DB_PATH, skip_set)
     if unknowns:
-        _resolve_unknowns_interactively(unknowns, DB_PATH, skip_list_path)
+        _resolve_unknowns_interactively(unknowns, DB_PATH, skip_list_path, ask_func=ask_func)
         # 選択結果を反映するためスキップリストを再読み込み
         skip_set = load_skip_list(skip_list_path)
 

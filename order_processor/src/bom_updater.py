@@ -80,17 +80,16 @@ def _rows_differ(db_rows: list[dict], new_rows: list[dict]) -> bool:
     return sorted(sig(r) for r in db_rows) != sorted(sig(r) for r in new_rows)
 
 
-def apply_diff_interactively(diff: dict, db_path: str) -> dict:
+def apply_diff_interactively(diff: dict, db_path: str, ask_func=None) -> dict:
     """
     差分を画面に表示し、1件ずつ確認しながらDBを更新する。
 
-    - 新規追加 → 自動でDBに追加（確認なし）
-    - 削除予定 → 1件ずつ「残す / 削除する」を確認
-    - 内容変更 → 1件ずつ「新しい内容で更新 / 現在の内容を残す」を確認
-
-    Returns:
-        {"added": n, "deleted": n, "changed": n}
+    ask_func(label1, label2, context) -> '1' | '2'
+        指定しない場合はターミナル入力を使う。
+        GUIモードではtkinterダイアログを渡す。
     """
+    if ask_func is None:
+        ask_func = _cli_ask
     added     = diff["added"]
     deleted   = diff["deleted"]
     changed   = diff["changed"]
@@ -134,7 +133,8 @@ def apply_diff_interactively(diff: dict, db_path: str) -> dict:
             print()
             print("  [1] 残す  （削除しない）")
             print("  [2] 削除する")
-            choice = _ask("[1/2]")
+            choice = ask_func("残す（削除しない）", "削除する",
+                              f"品番: {oya}\n新しい構成一覧にこの品番がありません。")
 
             if choice == "2":
                 conn.execute("DELETE FROM bom WHERE 親品番 = ?", (oya,))
@@ -161,7 +161,8 @@ def apply_diff_interactively(diff: dict, db_path: str) -> dict:
             print()
             print("  [1] 新しい内容で更新する")
             print("  [2] 現在の内容をそのまま残す（変更しない）")
-            choice = _ask("[1/2]")
+            choice = ask_func("新しい内容で更新する", "現在の内容をそのまま残す",
+                              f"品番: {oya}")
 
             if choice == "1":
                 conn.execute("DELETE FROM bom WHERE 親品番 = ?", (oya,))
@@ -211,13 +212,13 @@ def _insert_rows(conn, rows: list[dict]):
     )
 
 
-def _ask(prompt: str) -> str:
-    """1 か 2 の入力を求める"""
+def _cli_ask(label1: str, label2: str, context: str = "") -> str:
+    """ターミナル版の選択入力（CLIモード用）"""
     while True:
         try:
-            choice = input(f"  選択 {prompt}: ").strip()
+            choice = input("  選択 [1/2]: ").strip()
         except EOFError:
-            return "1"   # 非対話環境ではデフォルトで「残す / 変更しない」
+            return "1"
         if choice in ("1", "2"):
             return choice
         print("  1 か 2 を入力してください。")
