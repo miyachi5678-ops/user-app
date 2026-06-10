@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ホンダテクノ 領収証発行</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'MS Mincho', 'Yu Mincho', 'Hiragino Mincho ProN', serif;
+      background: #e0e0e0;
+      padding: 20px;
+    }
+
+    /* ===== 入力フォーム ===== */
+    .no-print {
+      max-width: 700px;
+      margin: 0 auto 24px;
+      background: white;
+      border-radius: 10px;
+      padding: 24px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+    }
+
+    .form-title {
+      text-align: center;
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 20px;
+      font-family: 'Yu Gothic', 'Hiragino Kaku Gothic ProN', sans-serif;
+      color: #1a1a1a;
+      letter-spacing: 0.05em;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .form-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .form-row.span2 { grid-column: 1 / -1; }
+
+    .form-row label {
+      width: 72px;
+      font-size: 14px;
+      font-weight: bold;
+      font-family: 'Yu Gothic', 'Hiragino Kaku Gothic ProN', sans-serif;
+      color: #444;
+      flex-shrink: 0;
+    }
+
+    .form-row input, .form-row select {
+      flex: 1;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: 'Yu Gothic', 'Hiragino Kaku Gothic ProN', sans-serif;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-row input:focus, .form-row select:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+    }
+
+    .stamp-notice {
+      grid-column: 1 / -1;
+      background: #fffbeb;
+      border: 1px solid #f59e0b;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-family: 'Yu Gothic', sans-serif;
+      color: #78350f;
+      display: none;
+    }
+
+    .stamp-notice.visible { display: block; }
+
+    .btn-print {
+      grid-column: 1 / -1;
+      padding: 13px;
+      background: #1d4ed8;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-family: 'Yu Gothic', 'Hiragino Kaku Gothic ProN', sans-serif;
+      cursor: pointer;
+      margin-top: 4px;
+      letter-spacing: 0.08em;
+      transition: background 0.2s;
+    }
+
+    .btn-print:hover { background: #1e3a8a; }
+
+    .form-note {
+      grid-column: 1 / -1;
+      font-size: 12px;
+      color: #888;
+      font-family: 'Yu Gothic', sans-serif;
+      text-align: right;
+      margin-top: -8px;
+    }
+
+    /* ===== 領収証エリア ===== */
+    #receipt-wrapper {
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    #receipt {
+      background: white;
+      width: 700px;
+      padding: 18px 22px 16px;
+      position: relative;
+      border: 2px solid #444;
+      font-family: 'MS Mincho', 'Yu Mincho', 'Hiragino Mincho ProN', serif;
+    }
+
+    #receipt::before {
+      content: '';
+      position: absolute;
+      inset: 5px;
+      border: 1px solid #aaa;
+      pointer-events: none;
+    }
+
+    /* ヘッダー行 */
+    .r-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .r-spacer { width: 90px; flex-shrink: 0; }
+
+    .r-title {
+      flex: 1;
+      text-align: center;
+      font-size: 26px;
+      font-weight: bold;
+      letter-spacing: 0.7em;
+      text-indent: 0.7em;
+    }
+
+    .r-no {
+      width: 90px;
+      flex-shrink: 0;
+      font-size: 13px;
+      text-align: right;
+    }
+
+    .r-no-val {
+      display: inline-block;
+      border-bottom: 1px solid #333;
+      min-width: 55px;
+      padding: 0 2px;
+    }
+
+    /* 宛名・日付行 */
+    .r-name-date {
+      display: flex;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 4px;
+    }
+
+    .r-name-wrap {
+      flex: 1;
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 3px;
+    }
+
+    .r-name {
+      flex: 1;
+      font-size: 18px;
+      min-height: 26px;
+    }
+
+    .r-sama { font-size: 15px; margin-bottom: 1px; white-space: nowrap; }
+
+    .r-date {
+      font-size: 13px;
+      white-space: nowrap;
+      display: flex;
+      align-items: baseline;
+      gap: 2px;
+    }
+
+    .r-date-val {
+      display: inline-block;
+      border-bottom: 1px solid #333;
+      min-width: 26px;
+      text-align: center;
+      padding: 0 2px;
+    }
+
+    /* 登録番号 */
+    .r-regno {
+      text-align: right;
+      font-size: 11px;
+      color: #bbb;
+      margin-bottom: 8px;
+      letter-spacing: 0.05em;
+    }
+
+    /* 金額 + 内訳 */
+    .r-middle {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 8px;
+    }
+
+    .r-amount-area { flex: 1; }
+
+    .r-amount-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .r-kinlabel {
+      font-size: 14px;
+      font-weight: bold;
+      margin-right: 8px;
+      white-space: nowrap;
+      letter-spacing: 0.3em;
+    }
+
+    .r-amount-boxes {
+      display: flex;
+      border: 1px solid #333;
+    }
+
+    .r-abox {
+      width: 34px;
+      height: 34px;
+      border-right: 1px solid #333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      font-weight: bold;
+    }
+
+    .r-abox:last-child { border-right: none; }
+
+    .r-abox.yen {
+      font-size: 13px;
+      background: #f5f5f5;
+      font-weight: normal;
+      min-width: 28px;
+    }
+
+    .r-tadashi {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      margin-bottom: 5px;
+    }
+
+    .r-tadashi-label { font-size: 13px; white-space: nowrap; }
+
+    .r-tadashi-val {
+      flex: 1;
+      border-bottom: 1px solid #333;
+      min-height: 20px;
+      font-size: 13px;
+      padding-bottom: 1px;
+    }
+
+    .r-confirm { font-size: 12px; }
+
+    /* 内訳テーブル */
+    .r-breakdown { border: 1px solid #333; }
+
+    .r-breakdown table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .r-breakdown td {
+      border: 1px solid #333;
+      padding: 2px 8px;
+      font-size: 12px;
+      height: 23px;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    .r-uchiwake {
+      background: #f0f0f0;
+      text-align: center;
+      padding: 6px 4px !important;
+      line-height: 1.8;
+      vertical-align: middle !important;
+    }
+
+    .checked { background: #eef6ff; }
+
+    /* サービス */
+    .r-service {
+      text-align: center;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+
+    /* 下段 */
+    .r-bottom {
+      display: flex;
+      align-items: stretch;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .r-inshi {
+      border: 1px solid #333;
+      width: 64px;
+      height: 76px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      flex-shrink: 0;
+      font-size: 13px;
+      letter-spacing: 0.1em;
+    }
+
+    .r-company {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      text-align: center;
+    }
+
+    .r-company-name-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .r-company-sub {
+      font-size: 11px;
+      text-align: left;
+      line-height: 1.3;
+    }
+
+    .r-company-name {
+      font-size: 22px;
+      font-weight: bold;
+    }
+
+    .r-director {
+      font-size: 12px;
+      letter-spacing: 0.35em;
+    }
+
+    .r-address {
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .r-tel { font-size: 10px; letter-spacing: 0.08em; }
+
+    .r-handler {
+      border: 1px solid #333;
+      width: 64px;
+      height: 76px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+      flex-shrink: 0;
+      font-size: 11px;
+      line-height: 1.8;
+    }
+
+    /* ===== 印刷 ===== */
+    @media print {
+      @page { size: A4 landscape; margin: 15mm; }
+
+      body { background: white; padding: 0; }
+
+      .no-print { display: none !important; }
+
+      #receipt-wrapper { max-width: none; }
+
+      #receipt {
+        width: 100%;
+        border: 2px solid #333;
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== 入力フォーム ===== -->
+<div class="no-print">
+  <div class="form-title">ホンダテクノ 領収証発行</div>
+  <div class="form-grid">
+
+    <div class="form-row">
+      <label>宛　名</label>
+      <input type="text" id="f-name" placeholder="会社名・お客様名" oninput="updateReceipt()">
+    </div>
+
+    <div class="form-row">
+      <label>No.</label>
+      <input type="text" id="f-no" placeholder="番号" oninput="updateReceipt()">
+    </div>
+
+    <div class="form-row">
+      <label>金　額</label>
+      <input type="number" id="f-amount" placeholder="例：100000" min="0" oninput="updateReceipt()">
+    </div>
+
+    <div class="form-row">
+      <label>日　付</label>
+      <input type="date" id="f-date" oninput="updateReceipt()">
+    </div>
+
+    <div class="form-row span2">
+      <label>但　し</label>
+      <input type="text" id="f-desc" placeholder="例：ステンレス加工代として" oninput="updateReceipt()">
+    </div>
+
+    <div class="form-row">
+      <label>区　分</label>
+      <select id="f-kubun" onchange="updateReceipt()">
+        <option value="genkin">現金</option>
+        <option value="kogitte">小切手</option>
+        <option value="tegata">手形</option>
+        <option value="sousai">相殺</option>
+      </select>
+    </div>
+
+    <div class="stamp-notice span2" id="stamp-notice">
+      ⚠ 印紙が必要です（収入印紙 <strong><span id="stamp-amount"></span>円</strong>）— 印紙欄に貼付してください
+    </div>
+
+    <div class="form-note">印刷後、No. が自動で次の番号に進みます</div>
+
+    <button class="btn-print" onclick="printReceipt()">🖨　印刷する</button>
+
+  </div>
+</div>
+
+<!-- ===== 領収証 ===== -->
+<div id="receipt-wrapper">
+<div id="receipt">
+
+  <!-- ヘッダー -->
+  <div class="r-header">
+    <div class="r-spacer"></div>
+    <div class="r-title">領　収　証</div>
+    <div class="r-no">No.&thinsp;<span class="r-no-val" id="r-no"></span></div>
+  </div>
+
+  <!-- 宛名 / 日付 -->
+  <div class="r-name-date">
+    <div class="r-name-wrap">
+      <div class="r-name" id="r-name"></div>
+      <div class="r-sama">様</div>
+    </div>
+    <div class="r-date">
+      <span id="r-year"></span>年&ensp;
+      <span class="r-date-val" id="r-month"></span>月&ensp;
+      <span class="r-date-val" id="r-day"></span>日
+    </div>
+  </div>
+
+  <!-- 登録番号 -->
+  <div class="r-regno">登録番号：T8180002074728</div>
+
+  <!-- 金額 + 内訳 -->
+  <div class="r-middle">
+    <div class="r-amount-area">
+
+      <div class="r-amount-row">
+        <div class="r-kinlabel">金　額</div>
+        <div class="r-amount-boxes">
+          <div class="r-abox yen">¥</div>
+          <div class="r-abox" id="r-d7"></div>
+          <div class="r-abox" id="r-d6"></div>
+          <div class="r-abox" id="r-d5"></div>
+          <div class="r-abox" id="r-d4"></div>
+          <div class="r-abox" id="r-d3"></div>
+          <div class="r-abox" id="r-d2"></div>
+          <div class="r-abox" id="r-d1"></div>
+        </div>
+      </div>
+
+      <div class="r-tadashi">
+        <div class="r-tadashi-label">但し</div>
+        <div class="r-tadashi-val" id="r-desc"></div>
+      </div>
+
+      <div class="r-confirm">上記金額正に領収いたしました</div>
+    </div>
+
+    <!-- 内訳テーブル -->
+    <div class="r-breakdown">
+      <table>
+        <tr>
+          <td class="r-uchiwake" rowspan="4">内<br>訳</td>
+          <td id="b-genkin">現　金</td>
+        </tr>
+        <tr><td id="b-kogitte">小切手</td></tr>
+        <tr><td id="b-tegata">手　形</td></tr>
+        <tr><td id="b-sousai">相　殺</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- ステンレス・金属加工一式 -->
+  <div class="r-service">ステンレス・金属加工一式</div>
+
+  <!-- 下段：印紙 / 会社情報 / 扱者印 -->
+  <div class="r-bottom">
+
+    <div class="r-inshi">
+      <span>印</span>
+      <span>紙</span>
+    </div>
+
+    <div class="r-company">
+      <div class="r-company-name-row">
+        <!-- Honda Techno ロゴ（H マーク） -->
+        <svg width="30" height="30" viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg">
+          <ellipse cx="15" cy="15" rx="14" ry="13" fill="none" stroke="#222" stroke-width="1.4"/>
+          <text x="15" y="20.5" text-anchor="middle"
+                font-size="15" font-weight="bold"
+                font-family="'Arial','sans-serif'" fill="#222">H</text>
+        </svg>
+        <div>
+          <div class="r-company-sub">有限会社</div>
+          <div class="r-company-name">ホンダテクノ</div>
+        </div>
+      </div>
+      <div class="r-director">代表取締役　本　田　正　敏</div>
+      <div class="r-address">〒480-0137　愛知県丹羽郡大口町大屋敷三丁目18番地の2</div>
+      <div class="r-tel">TEL（0587）95－0155　　FAX（0587）95－0154</div>
+    </div>
+
+    <div class="r-handler">
+      <span>扱</span>
+      <span>者</span>
+      <span>印</span>
+    </div>
+
+  </div>
+
+</div><!-- #receipt -->
+</div><!-- #receipt-wrapper -->
+
+<script>
+  const KUBUN_LABELS = {
+    genkin:  { id: 'b-genkin',  text: '現　金' },
+    kogitte: { id: 'b-kogitte', text: '小切手' },
+    tegata:  { id: 'b-tegata',  text: '手　形' },
+    sousai:  { id: 'b-sousai',  text: '相　殺' },
+  };
+
+  // 印紙税額テーブル（金銭の受取書）
+  const STAMP_TABLE = [
+    [50000,      0],
+    [100000,    200],
+    [200000,    400],
+    [300000,    600],
+    [500000,   1000],
+    [1000000,  2000],
+    [2000000,  4000],
+    [3000000,  6000],
+    [5000000, 10000],
+    [10000000,20000],
+    [Infinity, 60000],
+  ];
+
+  function stampTax(amount) {
+    if (amount < 50000) return 0;
+    for (const [limit, tax] of STAMP_TABLE) {
+      if (amount < limit) return tax;
+    }
+    return 60000;
+  }
+
+  // ページ読み込み時の初期化
+  (function init() {
+    // 今日の日付をセット
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    document.getElementById('f-date').value = `${y}-${m}-${day}`;
+
+    // localStorage から前回の No. を復元
+    const savedNo = localStorage.getItem('hondatechno-receipt-no');
+    if (savedNo) document.getElementById('f-no').value = savedNo;
+
+    updateReceipt();
+  })();
+
+  function updateReceipt() {
+    const name   = document.getElementById('f-name').value;
+    const amount = parseInt(document.getElementById('f-amount').value) || 0;
+    const dateV  = document.getElementById('f-date').value;
+    const desc   = document.getElementById('f-desc').value;
+    const no     = document.getElementById('f-no').value;
+    const kubun  = document.getElementById('f-kubun').value;
+
+    // No.
+    document.getElementById('r-no').textContent = no;
+
+    // 宛名
+    document.getElementById('r-name').textContent = name;
+
+    // 日付（和暦変換）
+    if (dateV) {
+      const d = new Date(dateV + 'T00:00:00');
+      const year = d.getFullYear();
+      const reiwaStart = new Date('2019-05-01');
+      let yearLabel;
+      if (d >= reiwaStart) {
+        const ry = year - 2018;
+        yearLabel = `令和${ry}`;
+      } else if (d >= new Date('1989-01-08')) {
+        yearLabel = `平成${year - 1988}`;
+      } else {
+        yearLabel = year;
+      }
+      document.getElementById('r-year').textContent  = yearLabel;
+      document.getElementById('r-month').textContent = d.getMonth() + 1;
+      document.getElementById('r-day').textContent   = d.getDate();
+    }
+
+    // 金額ボックス（7桁）
+    const str    = amount > 0 ? amount.toString() : '';
+    const padded = str.padStart(7, ' ');
+    for (let i = 0; i < 7; i++) {
+      const box  = document.getElementById(`r-d${7 - i}`);
+      const char = padded[i];
+      box.textContent = (char && char !== ' ') ? char : '';
+    }
+
+    // 但し
+    document.getElementById('r-desc').textContent = desc;
+
+    // 内訳チェック
+    Object.values(KUBUN_LABELS).forEach(({ id, text }) => {
+      const cell = document.getElementById(id);
+      cell.textContent = text;
+      cell.classList.remove('checked');
+    });
+    const sel = KUBUN_LABELS[kubun];
+    if (sel) {
+      const cell = document.getElementById(sel.id);
+      cell.textContent = '○ ' + sel.text;
+      cell.classList.add('checked');
+    }
+
+    // 印紙通知
+    const tax    = stampTax(amount);
+    const notice = document.getElementById('stamp-notice');
+    if (tax > 0) {
+      document.getElementById('stamp-amount').textContent = tax.toLocaleString();
+      notice.classList.add('visible');
+    } else {
+      notice.classList.remove('visible');
+    }
+  }
+
+  function printReceipt() {
+    window.print();
+  }
+
+  // 印刷後に No. を自動インクリメント
+  window.addEventListener('afterprint', function () {
+    const noEl  = document.getElementById('f-no');
+    const noVal = noEl.value.trim();
+    if (noVal && /^\d+$/.test(noVal)) {
+      const next = (parseInt(noVal) + 1).toString();
+      noEl.value = next;
+      localStorage.setItem('hondatechno-receipt-no', next);
+      updateReceipt();
+    }
+  });
+</script>
+</body>
+</html>
